@@ -1,0 +1,173 @@
+<html>
+
+<head>
+<title>Octavia: Frequently Asked Questions</title>
+<link href="style.css" rel="stylesheet" /><meta charset="UTF-8">
+</head>
+
+<body>
+
+<h1><a href="index.html"><img src="8va.png" alt="Octavia" width="105" height="56" /></a>: Frequently Asked Questions</h1>
+
+<h2>General</h2>
+
+<h3>Why is it called “Octavia”?</h3>
+
+<p><a href="http://en.wikipedia.org/wiki/Octavia_E._Butler">Octavia E.
+Butler</a> was a groundbreaking author of science fiction and other novels
+notable for their complex and nuanced perspectives on race, power, and
+gender; at the same time, she inspired people with her magnificent
+imagination. Butler achieved all this in short but dense stories that reward
+multiple readings.</p>
+
+
+<h2>Client</h2>
+
+<h3>Can I use Octavia as a backup system?</h3>
+
+<p>Future Octavia clients will keep track of a configurable number of
+directory descriptor versions, enabling a feature like FreeBSD/NetApp/Plan 9
+“snapshots”: old versions of your files will still be available
+in a .snapshot directory. Since the directories and files are stored on many
+servers, including old versions, that may be good enough for you as a
+recoverable backup system.</p>
+
+<p>If that is not good enough for you, you will still be able to use
+whatever other backup system you prefer along with your Octavia
+filesystem.</p>
+
+<h3>Why doesn’t Octavia support POSIX permissions or NT ACLs?</h3>
+
+<p>Unix UIDs/GIDs and NT SIDs are local concepts, valid no more widely than
+a single domain (e.g. an Active Directory or LDAP domain). Even on such a
+small scale, these domain management systems are not known for security.
+Octavia is a secure internet filesystem, and so implements access control in
+the only way that scales globally: cryptography.</p>
+
+<p>Each directory has a distinct encryption key, which the client uses to
+encrypt the files and directory descriptors contained within. Thus, the
+directory subtree is the unit of read access sharing. Each client has
+symmetric signing key relationships with one or more servers, allowing that
+client the ability to write blocks to the server. It’s up to the
+client to organize those blocks into files and directories, including
+possibly new versions (“forks”) of directory subtrees shared
+from another client.</p>
+
+<p>The server has no notion of files or directories, only blocks of
+ciphertext, and thus cannot enforce any permission other than block
+writes, and rate-limiting block reads by IP address.</p>
+
+<h3>Does Octavia support file locking?</h3>
+
+<p>No. Each write is a new, independent version (fork) of the original file
+or directory. Octavia files and directories are <em>purely functional</em>
+(or <em>persistent</em>) trees (see <a
+href="references.html#okasaki-functional">Okasaki</a>).</p>
+
+<h3>Does Octavia support memory-mapped I/O?</h3>
+
+<p>Even a true Octavia client in your OS kernel is probably not going to
+support memory-mapped I/O (such as with the <em>mmap</em>(2) or
+<em>MapViewOfFile</em> system calls) particularly efficiently.</p>
+
+<p>The lack of file or region locking and efficient mapped I/O make Octavia
+a bad choice for storing database files. In that regard, Octavia is no worse
+or better than existing network filesystems like CIFS and NFS.</p>
+
+
+<!--
+<h2>Server</h2>
+
+<h3>What are some examples of server policies?</h3>
+-->
+
+
+<h2>Security</h2>
+
+<h3>Why is there no cipher suite negotiation?</h3>
+
+<p>Other cryptographic network protocols like <a
+href="http://en.wikipedia.org/wiki/Transport_Layer_Security">TLS</a> and <a
+href="http://en.wikipedia.org/wiki/Secure_Shell">SSH</a> include nifty
+mechanisms allowing clients and servers to negotiate security parameters
+such as cipher algorithm, block cipher mode, key exchange protocol, and
+integrity protection algorithm. This is a great idea because cryptographic
+functions have a disturbing tendency to be exposed as broken over time (for
+example, <a
+href="http://en.wikipedia.org/wiki/Data_Encryption_Standard">DES</a> and <a
+href="http://en.wikipedia.org/wiki/MD5">MD5</a>). Making the protocol
+flexible allows deployers and developers to configure new, hopefully-safer
+security parameters.</p>
+
+<p>However, the flexibility comes at the high cost of increased protocol and
+code complexity. Complexity is a leading cause of bugs, including security
+vulnerabilities. (See <a
+href="references.html#ferguson-schneier-practical">Ferguson and
+Schneier</a>, section 1.2 “The Evils of Features”.) SSL version
+2, for example, had a security downgrade vulnerability in its negotiation
+(see <a href="references.html#wagner-schneier-ssl3">Wagner and
+Schneier</a>). Similarly, SSH endpoints supporting both SSH 1 and 2 can be
+downgraded by an active network attacker (see <a
+href="references.html#click-death-mitm">Click Death Squad</a>; note that the
+Squad specifies that the attacker have a cold beer on hand but that tawny
+port works just as well).</p>
+
+<p>The increased complexity manifests as increased cognitive load for
+users&#x200A;—&#x200A;in order to make the right choice, people have to
+understand the problem and the options. To expect normal people to make the
+right choice between SHA-1, Tiger, and Whirlpool is unrealistic and plainly
+silly.</p>
+
+<p>Additionally, for people to deploy a new, more secure cipher, they have
+to get a new version of the application supporting the new cipher. (If they
+had the good cipher in their old version, why would they choose to use the
+bad cipher?) Thus, people have to wait for a safe upgrade in any case.</p>
+
+<p>This leaves compatibility with non-upgraded peers as a key reason to make
+the protocol flexible. But why would we want to converse with
+known-vulnerable peers? How would we avoid downgrade attacks?</p>
+
+<p>Instead, Octavia ties security functions tightly to the protocol version.
+Each protocol version uses believed-strong security functions; for example,
+version 0 uses AES-128-CBC, SHA-256, and HMAC-SHA-256. As far as we know in
+late 2009, these functions provide something close to 128-bit security,
+which even if slightly weakened should be sufficient for the medium-term
+future (see <a href="references.html#ferguson-schneier-practical">Ferguson
+and Schneier</a>, section 3.7 “Security Level”).</p>
+
+<h3>What if one of the algorithms is broken?</h3>
+
+<p>If someone finds a weakness in one of these functions and/or in the
+Octavia protocol itself, we will develop a new protocol version and
+implementation(s) to address the problem(s). Particular client and server
+implementations can provide more or less configuration flexibility, and
+deployers can deploy the implementations and versions they feel comfortable
+with.</p>
+
+
+<h3>Does Octavia defend against traffic analysis?</h3>
+
+<p>Octavia makes no attempt to defeat <a
+href="http://en.wikipedia.org/wiki/Traffic_analysis">traffic analysis
+attacks</a>. This is unfortunate, because traffic analysis is a powerful
+attack technique. It is also incredibly difficult to defend against.<p>
+
+<p>While there is a beautiful system designed to defend against traffic
+analysis, <a href="https://www.torproject.org/">Tor</a>, at this time Tor
+can only work with TCP streams. Octavia uses UDP datagrams for all its
+transport.</p>
+
+<p>Sorry about that.</p>
+
+<p>It is possible that Tor may support UDP or even IP someday (see <a
+href="http://archives.seul.org/or/talk/Mar-2007/msg00069.html">this message
+from Nick Mathewson</a> and <a
+href="http://wiki.noreply.org/noreply/TheOnionRouter/TorFAQ#TransportIPnotTCP">this
+Tor FAQ entry</a>), but it’s not going to be easy.</p>
+
+<a href="http://creativecommons.org/licenses/by-sa/3.0/"><img
+src="cc-by-sa.png" alt="CC Attribution-ShareAlike" /></a>
+
+</body>
+</html>
+

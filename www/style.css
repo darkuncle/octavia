@@ -1,0 +1,41 @@
+body {
+      margin-top: 1in;
+      margin-bottom: 1in;
+      margin-left: auto;
+      margin-right: auto;
+      width: 45em;
+      text-align: left;
+      line-height: 145%;
+      font-family: Helvetica, Arial, sans-serif;
+      font-size: 12pt;
+      background-color: white;
+}
+
+pre {
+      background-color: #eee;
+      margin-left: 1cm;
+      font-family: Inconsolata, Consolas, monospace;
+      font-size: 12pt;
+}
+
+a:link {
+      color: blue;
+      text-decoration: none;
+      border-bottom: 1px solid #ddd;
+}
+
+a:visited {
+      color: purple;
+      text-decoration: none;
+      border-bottom: 1px solid #ddd;
+}
+
+a:active, a:hover {
+      text-decoration: none;
+      border-bottom: 1px solid #777;
+}
+
+img {
+      border: 0px;
+}
+

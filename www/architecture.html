@@ -1,0 +1,406 @@
+<html>
+
+<head>
+<title>Octavia Architecture</title>
+<link href="style.css" rel="stylesheet" />
+<meta charset="UTF-8">
+</head>
+
+<body>
+
+<h1><a href="/octavia/">Octavia</a>: Architecture</h1>
+
+<p><em>By Chris Palmer (<a
+href="http://noncombatant.org/">noncombatant.org</a>), 28 May 2010<br/>
+
+Slightly amended after valuable help from Zooko O’Whielacronx (see
+below), 28 May 2010</em></p>
+
+<p>TODO: Explain why we don’t (or do?) need an all-or-nothing transform.
+Consider borrowing Tahoe-LAFS’ combined ciphers technique.</p>
+
+<p>This document (very) informally describes the Octavia protocol. Octavia
+is a decentralized network data storage system that aims to provide the
+security guarantees of <em>confidentiality</em>, <em>integrity</em>, and
+<em>availability</em> against internet threats.</p>
+
+<p>Clients should experience high availability regardless of the
+availability or policy of any particular server. Servers and active and
+passive network attackers have no chance to adversely affect confidentiality
+and integrity without breaking the cryptographic functions.  Depending on
+their situation relative to the client and the client’s servers, network
+attackers will have more or less opportunity to adversely affect
+availability and performance.</p>
+
+<p>Octavia makes no attempt to defeat traffic analysis attacks; however,
+Octavia could be transported over an overlay or proxy network such as Tor to
+provide this feature.</p>
+
+<p>Octavia provides its security guarantees regardless of transport. I
+designed Octavia with UDP in mind, but TCP (with message pipelining) also
+seems plausible (and necessary for use with Tor).</p>
+
+<p>This document focuses primarily on the local and network data structures
+that enable the system to work; I do not describe the processes that operate
+on the structures because I hope they are mostly obvious. However, they may
+not be. <tt>:)</tt></p>
+
+
+<h2>File and Directory Descriptors</h2>
+
+<h3>Segment</h3>
+
+<p>Files are <em>streams</em> of bytes, broken up into arbitrarily-sized
+<em>segments</em>. (Segments will usually be of some consistent size,
+perhaps related to the link’s maximum transfer unit.) Segments are encrypted
+with a per-directory encryption-key before transmission.</p>
+
+<p>Clients store their file segments on as many servers as they like. They
+can later retrieve segments of a given file from any combination of servers
+that have a copy of the segment. (In some deployments, it might even make
+sense to simply broadcast get-requests.)</p>
+
+<pre>
+ciphertext(plaintext) := {
+      iv
+      aes-128-cbc(encryption-key, iv, plaintext)
+}
+
+segment-id(ciphertext) := {
+      size(ciphertext)
+      sha-512-d(ciphertext)
+}
+</pre>
+
+<h3>File Descriptor</h3>
+
+<pre>
+type := file
+type := directory
+
+file-descriptor := {
+      type
+      name
+      mtime
+      segment-id ...
+}
+</pre>
+
+<h3>Directory Descriptor</h3>
+
+<p>Directory descriptors are stored as regular files in the Octavia
+filesystem. Only the root descriptor is delivered out-of-band; once a client
+has its root descriptor, it can dynamically discover, retrieve, verify, and
+decrypt the descriptors of all file and directory children of the root.</p>
+
+<p>Because each directory has a different encryption key, the minimal unit
+of read-sharing is the subtree. Any directory descriptor could be mounted as
+a root. For example, imagine that Zooko wants to share his archive of
+cryptography papers with the world. He would create a new subdirectory
+underneath his own Octavia root (or create a completely new Octavia root),
+populate it with documents and (optionally) subdirectories, and then publish
+it on his web site. Anyone can retrieve the descriptor, mount it in a
+directory on their system, and now browse the entire crypto document
+subtree. Zooko’s friends would download the root descriptor and mount it as
+follows (assuming an unfortunately still-hypothetical Octavia implementation
+called <var>8va</var>):</p>
+
+<pre>
+$ <strong>wget https://zooko.com/crypto-papers.8va &gt; crypto-papers.8va</strong>
+$ <strong>8va crypto-papers.8va ~/8va-mounts/crypto-papers</strong>
+</pre>
+
+<p>Note that the guarantee of confidentiality is lost in this
+case&#x200a;—&#x200a;the documents are publically
+readable&#x200a;—&#x200a;because the descriptor is public. If Zooko wanted
+to maintain confidentiality, he would need to ensure that only his closest
+friends were able to retrieve the descriptor (perhaps by password-protecting
+the web resource, or only sending it in PGP-encrypted email, or some similar
+mechanism).</p>
+
+<p>It is similarly a good idea for users to back up copies of their own root
+descriptors and the signing keys they have shared with servers, using secure
+means such as PGP, SSH, or USB keys in a safe. A directory descriptor is
+necessary and sufficient to discover, verify, retrieve, and decrypt all
+children of the directory. The signing keys are necessary and sufficient to
+write and delete segments on servers. With nothing but their root descriptor
+and their signing keys, you can completely recover your Octavia data.</p>
+
+<p>Once mounted, a user can create new, private versions of a tree. The new
+segments can only be stored on servers with which the client has
+registrations, which may or may not overlap with the servers Zooko’s client
+has its own registrations with.</p>
+
+<pre>
+$ <strong>mkdir ~/8va-mounts/crypto-papers/my-additions</strong>
+$ <strong>cp some-cool-paper.pdf ~/8va-mounts/crypto-papers/my-additions</strong>
+</pre>
+
+<p>An Octavia directory tree is <em>persistent</em> (or <em>functional</em>,
+or <em>immutable</em>); that is, an update to a node creates a new version
+of that node without destroying the old version and without affecting other
+readers of the object. The update also incurs new versions of all parent
+nodes up to the root. (This is necessary so that the parent can describe the
+new version of the child.) Thus, all previous versions of all files and
+directories remain available, enabling a “snapshot” feature.  (However, a
+particular server’s garbage collection, quota, or liveness policies may
+result in the unavailability of some segments. Server policy may be
+influenced by delete-requests.)</p>
+
+<p>Each directory descriptor contains a list of servers that are known to
+have stored segments of its immediate children. Segment retrieval is
+unauthenticated.</p>
+
+<p>To store new segments on a server, clients must have a pre-arranged
+relationship (a <em>registration</em>) with the server. Clients and servers
+authenticate each other by verifying symmetric signatures made with the
+signing key. Segment storage and deletion are authenticated.</p>
+
+<pre>
+server := hostname:port
+server := ip-address:port
+
+directory-descriptor := {
+      encryption-key
+      mtime
+      version
+      server ...
+      file-descriptor ...
+}
+</pre>
+
+
+<h2>Protocol Messages</h2>
+
+<p>All currently-defined protocol messages concern the transfer and status
+of segments. Support protocols, such as for notifying other clients about
+updates to shared directories, registering clients with servers, and
+deliverying root directory descriptors, are not yet specified.</p>
+
+<p>The protocol is largely stateless; the client needs to maintain a table
+of pending put and delete requests (identified by their <em>nonce</em> or
+<em>transaction-id</em>).</p>
+
+<p>Although it may seem that clients need to maintain a table of pending
+get-requests, in fact a get-response identifies itself. Because the client
+must verify the response data anyway (by recalculating the segment-id given
+the data in hand), it thereby learns what request the response is for.
+Clients simply ignore redundant or damaged responses. (In fact both clients
+and servers ignore any message they don’t like, whatever the reason.)
+Clients should retry requests (possibly to different servers) in the event
+of unsatisfactory responses, or if no response arrives after a timeout.</p>
+
+<p>Zooko is correct that have-{request,response} seem unnecessary and
+bloaty. And there is no guarantee that servers will honor delete-requests,
+either. The first draft of Octavia did not include these four message types,
+but I added them later as a premature hinting mechanism for hypothetical
+optimizations. Implementors MAY laugh them off.</p>
+
+<pre>
+type := get-request
+type := get-response
+type := put-request
+type := put-response
+type := have-request
+type := have-response
+type := delete-request
+type := delete-response
+
+key-id := sha-512-d(signing-key)
+
+signature(data) := hmac(sha-512, signing-key, data)
+
+get-request := {
+      type
+      protocol-version
+      segment-id
+}
+
+get-response := {
+      type
+      protocol-version
+      size
+      ciphertext
+}
+
+put-request := {
+      type
+      protocol-version
+      nonce
+      key-id
+      signature(nonce || key-id || size || ciphertext)
+      size
+      ciphertext
+}
+
+put-response := {
+      type
+      protocol-version
+      nonce
+      signature(nonce || size || ciphertext)
+}
+
+have-request := {
+      type
+      protocol-version
+      segment-id
+}
+
+have-response := {
+      type
+      protocol-version
+}
+
+delete-request := {
+      type
+      protocol-version
+      segment-id
+      nonce
+      key-id
+      signature(nonce || key-id || segment-id)
+}
+
+delete-response := {
+      type
+      protocol-version
+      nonce
+      signature(nonce || segment-id)
+}
+</pre>
+
+
+<h2>Zooko’s Comments</h2>
+
+</div>
+
+<p>These are in roughly descending order of importance.</p>
+
+<ul>
+
+<li><p>It seems wrong for the nonce to be omitted from the signed data in
+the requests. An attacker can send requests to server with legitimate
+signatures (copied from legitimate messages) but supply their own nonce,
+thus getting the signature of the server on that nonce. They can do so more
+than once for a given legitimate signature. They could then wait until the
+next time the client issues a request that has a nonce, intercept that
+message, copy that nonce and get the server to sign that nonce with their
+old copy of some previous legitimate message's client-signature, and thus
+fool the client into thinking the server has positively acknowledged their
+latest request.
+
+<p>Including the nonce in the signature in the request should fix this, but
+why not put <em>all</em> of the fields of the request under the signature
+for those message types where a signature is required? There could be other
+problems like this one with the other unsigned fields. If we don't put them
+under the signature then we should think carefully about whether they are
+okay.</li>
+
+<li>Versioning of Octavia protocols/data formats; If I'm an Octavia version
+2 client and I'm downloading something, I might need to be able to tell
+whether the server that I'm talking to is an Octavia version 1 server or an
+Octavia version 2 server. I also might need to be able to tell whether the
+thing I'm downloading was uploaded by an Octavia version 1 client or an
+Octavia version 2 client. In addition it might be useful if there were a way
+for Octavia version 2 software to put data into the messages or the
+descriptors which they knew that Octavia version 1 software would always
+ignore, such as by specifying that Octavia version 1 software is supposed to
+ignore all fields higher than the known fields (if fields are numbered), or
+ignore all fields with unrecognized names (if fields are named).</li>
+
+<li><p>You could sort the entries in the directory and put an index at the
+beginning of the directory showing which entries begin at which character
+within the directory. This would allow efficiently fetching just the entry
+that you want. The extreme case would be a large directory of large files
+when you only are interested in the file that occurs at the end of the
+directory. The even more extreme case would be a chain of children with that
+same pattern. :-)</li>
+
+<li><p>There isn't a way within this spec to know which response is the
+response to which request, for those message pairs that don't have a nonce
+("no-authorization-required" messages). One could do that at a different
+layer, such as by putting the request in an HTTP request and the associated
+response in the associated HTTP response, or by putting them in order on a
+TCP stream.  If they are not delivered over such a transport but instead
+over an order-non-preserving transport such as UDP then we could get
+accidental mismatches.</p>
+
+<p>Even if they are delivered over an order-preserving (or at least
+pair-preserving) transport, malicious active attackers could reorder those
+messages to make the client think the wrong one was the response to a given
+request. As far as I can see this would not compromise confidentiality or
+integrity but could be a denial-of-service.</p>
+
+<p>It appears to be Octavia's design to rely on some external tools for such
+things, such as by running Octavia over SSL/TLS or SSH so that attackers
+can't reorder the data.</p>
+
+<p>It might be useful to include a sequence number or nonce on the
+no-authorization-required message pairs to avoid accidental mismatches on
+unreliable transports, and to facilitate matching on secure unreliable
+transports, reliable transports, and secure reliable transports.</p>
+
+<p>It might be wise in some eventual more detailed spec to warn the
+implementor not to assume that the no-authorization-required responses are
+properly paired with their requests unless she is using such a secure
+transport layer.</p></li>
+
+<li><p>Have you considered including in the directory descriptor a more
+detailed mapping of which specific servers have which specific segments?
+That could optimize out a round trip in the case that not all servers were
+given all segments, but that every server that was given a segment still has
+it. In that case--the case where the directory descriptor tells you exactly
+which servers had which segments, then you wouldn't use the
+<var>have-request</var> message at all, but would send get-requests right
+away. <var>have-request</var> would remain useful for the case that you
+don't know exactly who was supposed to have the segments (perhaps the
+directory doesn't say, or the set of servers that it lists aren't reachable
+by you but lots of other servers are).</p>
+
+<p>Server selection: does the uploader upload all the segments redundantly
+to multiple servers or upload only a subset of the segments to each server?
+What if the number of servers he has registrations with is greater than the
+number of servers he wants to upload to, so he has to choose a subset of the
+servers--which subset should he choose? Of course it is good to write a spec
+that is independent of this sort of strategy on the uploaders part, as you
+have done. The only problem is that for efficiency the downloader needs to
+be able to decide which servers to download which segments from without
+having to query lots of servers about what segments they actually
+have...</p>
+
+<p>Oh, wait a minute, I get it. The uploader is supposed to upload all
+segments to each server normally. The <var>have-request</var> message is
+probably normally useless--a downloader could start using a
+<var>have-request</var> once it realizes that the expected way of doing
+things has failed. But it would seem more consistent with Octavia's design
+to omit <var>have-request</var> entirely and require the uploader to produce
+a new <var>directory-descriptor</var> and the downloader to acquire the new
+<var>directory-descriptor</var> in such cases, such as if the segments are
+now stored on new servers and no longer on the old servers, or if many of
+the segments have been lost from some of the servers.</p>
+
+<p>Omitting <var>have-request</var> would thus simplify the spec by making
+it obvious that the downloader relies on the uploader to provide a
+descriptor describing good servers.</p></li>
+
+<li><p><var>have-request</var> needs a boolean value indicating whether I
+had or didn't have the droid you were looking for.</li>
+
+<li><p>What is <var>version</var> in <var>directory-descriptor</var>?
+(Guess: something that identifies which version of this directory, an
+arbitrary string which is by convention the decimal representation of an
+incrementing non-negative integer?)</li>
+
+<li><p>Does <var>server</var> need an optional port number?</li>
+
+<li><p>Good stuff! :-) Simple and secure! Nice narrow scope by excluding
+mutability, notifications of updates, and registration.</li>
+
+</ul>
+
+<a href="http://creativecommons.org/licenses/by-sa/3.0/"><img
+src="cc-by-sa.png" alt="CC Attribution-ShareAlike" /></a>
+
+</body>
+
+</html>
+

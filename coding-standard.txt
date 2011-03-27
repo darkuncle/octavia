@@ -1,0 +1,393 @@
+Octavia Coding Standard
+=======================
+
+Naming
+------
+
+Modified standard C++ naming: GlobalConstant, TypeName, function_name,
+field_name, lcl_vrbl, i. Local variable names are disemvowelled according to
+the algorithm in t/disemvowel.c. In general, the “size” of a name indicates
+its scope: “bigger” names are in larger scopes.
+
+Functions are named as complete verb phrases, always starting with the verb:
+retrieve_cookies, exacerbate_pumpkins_arbitrarily.
+
+(Arguably, we could use FunctionName (MS C/C++/C# style does), but I guess I
+like distinguishing function names from constant names and type names. It’s
+arbitrary and religious, and that is ok.)
+
+Space and Formatting
+--------------------
+
+Indentation is 6 spaces, never tabs. Tabs are ambiguous. Four spaces looks
+cramped to me, and 8 spaces looks to spread out, making my eyes get lost.
+
+Use vertical whitespace liberally.
+
+There is no space between a function name and the opening parenthesis. There
+is a space after every comma, and space around most other punctuation. BAD:
+
+      if(goat||sheep){foo();}
+      }else{wump();}
+
+Good:
+
+      if (goat || sheep)
+            foo();
+      else
+            wump();
+
+Also good:
+
+      if (goat || sheep) {
+            foo();
+      } else {
+            wump();
+      }
+
+Also good:
+
+      if (goat || sheep) {
+            // Long block
+      }
+      else {
+            // More stuff
+      }
+
+Use a space around the * that indicates pointer values. That distinction is
+important enough to warrant clarifying space.
+
+Plain text (.txt) files use DOS/internet linebreaks for maximum
+cross-platform viewing pleasure. All text is UTF-8. Code and HTML use Unix
+linebreaks. Nobody likes Mac linebreaks. All files have extensions.
+
+Text lines in text, HTML, and code files break at 76 characters. Code lines
+break at 100 characters.
+
+Documentation
+-------------
+
+All English prose is grammatical, in complete sentences, and spelled
+correctly.
+
+All revision control commit messages are meaningful and descriptive. None
+are blank. Commit messages should mention bug tracking system numbers.
+
+All public functions, types, and fields have Doxygen-style documentation.
+Other than these, comments should be rare because they should be
+unnecessary.
+
+All public functions have complete unit tests. Ha ha! No, really, we should
+do this.
+
+Language Standard
+-----------------
+
+The programming language is error- and warning-free ANSI C99:
+
+      CFLAGS="-Wall -Werror -Wextra -O2 -pedantic -std=c99"
+
+All code must compile cleanly with all compiler warnings turned on. Every
+warning is a bug, hence is promoted to an error. All code must run correctly
+(pass all unit tests) with all exploit mitigations enabled.
+
+Strongly prefer ANSI and POSIX library functions, although widely-supported
+modernisms may be acceptable.
+
+Use C99 features freely where they aid in reading comprehension. For
+example, declaring variables near where they are used (not just at the top
+of a scope), improved struct literals
+
+      Person p = { .name = "Alice", .age = 35 };
+
+, and improved array literals
+
+      typedef enum {
+            Terrible = 0,
+            Wacky = 1
+      } ErrorCode;
+
+      const char * ErrorMessages [] = {
+            [Terrible] = "Oh, God, the burning",
+            [Wacky]    = "I've got a bad feeling about this"
+      };
+
+can all make code easier to read.
+
+Although C99 lets you allocate dynamically-sized arrays on the stack, prefer
+the heap (using allocate, as described below) because it allows us to apply
+our simple error handling policy and may be more reliable (due to buggy
+stack growing code, stack size limits, and dynamic stack arrays' potential
+interference with exploit mitigation techniques). If profiling shows that
+stack allocation is significantly more performant in time and/or space, see
+Performance below.
+
+Encapsulation and Interface Design
+----------------------------------
+
+Minimize the dependencies between modules. Make information flow explicit by
+passing all necessary information to the callee in arguments, and to the
+caller in the return value. Use structs as return types to achieve this, if
+necessary.
+
+If a function argument is a pointer and the function does not modify the
+value through the pointer, declare it const. This should be the case most
+often. There are four general interface paradigms, listed here in order of
+preference:
+
+      /**
+       * Arguments are input; return is output.
+       */
+      ReturnValue foo(const char * stuff, size_t count);
+      dynamic ReturnValue bar(const char * stuff, size_t count);
+
+      /**
+       * The non-const value is modified upon return. Returning a dynamic
+       * char * would normally be preferable for clarity, but this interface
+       * is agnostic as to memory allocation policy and in some cases can
+       * thus enable more efficient code. Declaring the return type void
+       * reinforces that this is a call-for-side-effect(-on-argument)
+       * function.
+       */
+      void lowercase_string(char * return, const char * input, size_t count);
+
+      /**
+       * Prefer defining typedef struct { ... } Foo, instead of this unclear
+       * old junk style. In the old days, this was a way to avoid undue
+       * copying for large struct return values (e.g. stat(2)), but modern
+       * compilers optimize even large struct returns. Always prefer
+       * interfaces that make information flow clearest; prove that you need
+       * optimizations (and that the optimizations help!) with profiling.
+       */
+      int ugg(Thing * output, int something_else);
+
+      /**
+       * This is just monstrous, and does not belong in modern code.
+       */
+      int gag(Thing * input_and_output, int something_else);
+
+In the absence of garbage collection, there will commonly be at least one
+type of dependency between modules: callers must free the storage that
+dynamically-allocating callees allocate. (See Memory Management.) To cope
+with this ugliness, we use the pseudo-keyword dynamic in our interface
+declarations as a concise way of expressing the dependency.
+
+Use typedefs liberally to make code cleaner. Perfer this
+
+      typedef struct {
+            char * name;
+            uint16_t age;
+      } Person;
+
+      Person * get_person(Crowd * crowd);
+
+to this
+
+      struct Person {
+            char * name;
+            uint16_t age;
+      };
+
+      struct Person * get_person(struct Crowd * crowd);
+
+Note that this is legal and works well:
+
+      typedef struct PersonList {
+            char * name;
+            uint16_t age;
+            struct PersonList * next;
+      } PersonList;
+
+      PersonList * get_people(...);
+
+I.e. you only need to use the identifier “struct PersonList” inside the
+definition of the type.
+
+Do not obscure the value/reference distinction; i.e., never do this:
+
+      typedef struct {
+            char * name;
+            uint16_t age;
+      } * Person;
+
+      Person get_person(Crowd * crowd);
+
+Prefer accessor functions, rather than exposing struct internals. This
+allows us flexibility in the future implementation, such as using new data
+structures and adding additional code on field access.
+
+      typedef struct PersonList {
+            char * name;
+            uint16_t age;
+            struct PersonList * next;
+      } PersonList;
+
+      char * get_person_name(PersonList * person);
+      void set_person_name(PersonList * person, char * name);
+      PersonList * next_person(PersonList * people);
+
+If you are worried about performance, see Performance below and recall that
+trivial accessors will be inlined anyway. If you are worried about blub,
+well, experience shows that a little blub in the service of implementation
+flexibility is a net win. Internally to the implementation, you need not use
+accessors, and you need only provide public accessors for those fields that
+are part of the public interface.
+
+Use typedef'd enums, and other values, in place of old-timey #defines,
+except where the C grammar requires a #define. This helps in interactive
+debugging, because the values will be live and have meaningful names,
+instead of being statically embedded anonymous literals. Obviously, magic
+numbers are banned.
+
+Performance
+-----------
+
+Write the Simplest Code That Could Possibly Work. It is usually Performant
+Enough. If not, prove it with profiling, and write a unit test for the tuned
+code that documents the performance requirement and the profiling results,
+shows that the simple code does not meet the requirement, and shows that the
+tuned code does. The tuned code must still pass all correctness and safety
+tests, of course. Include the original, readable code in the source in a
+comment above the unreadable, optimized code.
+
+String Handling
+---------------
+
+String handling is hard to do safely using the standard C API. Therefore,
+the standard C string functions (strcat, strcpy, sprintf, snprintf, strncpy,
+strncat) are banned. (strdup and strndup would be ok, but they do not adhere
+to the error handling policy described below.) The improved functions
+strlcpy and strlcat are also banned, not because they are bad but because
+they are not enough of an improvement: they provide low-level semantics,
+differ subtly from their strn* cousins in a way that can induce migration
+mistakes, and still require verbose error checking to detect truncation.
+String handling with fixed-size buffers is not obviously safe, and we
+require code that is obviously safe.
+
+Instead, use the format function defined in util.c. It mallocs and requires
+the caller to free, but that is a reasonable price to pay for safety and
+high-level semantics. Here are some examples of its use:
+
+      // strcat-like:
+      char * greeting = format("Hello, %s\n", getName());
+      // ...
+      free(greeting);
+
+      // strcpy-like:
+      char * s = ...;
+      char * copy = format("%s", s);
+      // ...
+      free(copy);
+
+      // sprintf-like:
+      char * s = format("%s: %d (gobble) %s\n", thing, number, wow);
+      // ...
+      free(s);
+
+format is simply an error-checked asprintf(3). It always returns the correct
+string result or invokes abort(3).
+
+Memory Management
+-----------------
+
+There might be garbage collection someday. Until then, we must manually
+free. Observing some simple guidelines makes this a bit easier.
+
+Functions that return malloc'd memory are declared with the tag “dynamic”
+(an empty #define in util.h).
+
+      dynamic char * format(char * f, ...);
+
+Callers should free at the same indentation level as the call to the
+allocating function, whenever possible.
+
+      char * s = format(...);
+
+      if (whatever) {
+            // ...
+            // Don't free here!
+      } else {
+            // ...
+            // Don't free here!
+      }
+
+      // Free here, at the same level as the allocation:
+      free(s);
+
+When allocating memory directly, always use the util.c functions allocate
+and release. allocate is a checked allocator that succeeds or aborts,
+freeing you from the need to check the return value of e.g. malloc and
+setting a single clear error handling policy. release sets the pointer to
+Null in addition to freeing the allocated memory, improving the probability
+that errors will be caught sooner rather than later.
+
+Integer and Pointer Arithmetic
+------------------------------
+
+Use the right type for the job. Object sizes and offsets are size_t, not
+int, unsigned int, unsigned long, et c. Use stdint.h; don't assume that e.g.
+short int is always 16 bits. If you need or assume a specific size, use the
+type that makes that need/assumption explicit: uint16_t, int32_t, and so on.
+
+Integer overflow is an especially prevalent bug class in a variety of code
+contexts: loop counters, dynamic allocation size expressions, array offsets,
+pointer offsets, and more. 
+
+To avoid this problem:
+
+ * Use the allocate and reallocate functions, which do the multiplication
+   for you;
+ * Check that values are within a known-correct range (e.g. 0 <= x <
+   MaxSize); and
+ * Use a safe integer arithmetic library or a BigInt library for arbitrary
+   calculations.
+
+Error Handling
+--------------
+
+Use the logger function in util. To die from an unrecoverable error, simply
+log at priority Fatal; logger will abort.
+
+Octavia seeks to be “crash-only”
+(http://www.usenix.org/events/hotos03/tech/candea.html), i.e. to have a
+single termination/failure mode — crashing — and a single startup mode –
+crash recovery. Handle any unrecoverable condition by simply crashing. If it
+is possible to handle an error by ignoring the erroneous input, do so;
+otherwise, log and die. The watcher daemon (e.g. launchd or svscan) that
+starts the Octavia server will notice the death and restart Octavia.
+
+General Safety
+--------------
+
+Always prefer code that is obviously safe to code that is “probably ok”.
+
+Always put the constant or other non-lvalue on the left-hand side of the ==
+in a test for equality.
+
+      // Obviously safe:
+      if (0 == uid)
+
+      // Compile error:
+      if (0 = uid)
+
+      // Evil backdoor posing as a typo, commit privileges revoked:
+      if (uid = 0)
+
+Similarly, using assignment in conditional expressions is probably ok, but
+can be confusing and sometimes even dangerous. Prefer this:
+
+      while (True) {
+            int c = getchar();
+            if (EOF == c)
+                  break;
+
+            ...
+      }
+
+to this goaty 1980s crap:
+
+      int c;
+      while (EOF != (c = getchar())) {
+            ...
+      }
+

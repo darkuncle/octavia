@@ -1,0 +1,412 @@
+<html>
+
+<head>
+<title>Octavia: HOWTO Use Octavia</title>
+<link href="style.css" rel="stylesheet" /><meta charset="UTF-8">
+</head>
+
+<body>
+
+<h1><a href="index.html"><img src="8va.png" alt="Octavia" width="105" height="56" /></a>: HOWTO Use Octavia</h1>
+
+<p>Currently, using Octavia is a bit unwieldy. Sorry about that. In the
+future, it will be awesomer.<p>
+
+<p>These instructions show you how to download and build Octavia, how to set
+up a server and a client, and how to store and retrieve files with Octavia.
+All the functionality is available on the command line
+only&#x200A;—&#x200A;there is no graphical interface yet. There are
+also a few bits of software you have to get first.</p>
+
+<p><strong>Software Dependencies.</strong> You need the Java development kit
+(JDK). How you get it is different depending on your operating system:</p>
+
+<ul>
+
+<li><strong>On Mac OS X:</strong> You already have it because it comes with
+OS X. You are done. Good work!</li>
+
+<li><strong>On Windows:</strong> Go to <a
+href="http://java.sun.com/">java.sun.com</a> and grab the latest JDK for
+Windows. You want the full JDK, not just the JRE (Java runtime environment).
+Once it’s downloaded, run the installer as usual.</li>
+
+<li><strong>On Linux and Unix:</strong> Your system’s package manager
+probably has some way to get it. Ubuntu and FreeBSD make this process only
+somewhat more painful than it needs to be, so I recommend those systems. (By
+“recommend” I mean “recommend you run screaming
+from”, but nobody listens to me.)</li>
+
+</ul>
+
+<p>Once you have the JDK installed, you need a cryptography package for Java
+called Bouncy Castle. Go to <a
+href="http://www.bouncycastle.org/">bouncycastle.org</a> and download the
+Java (not the C#!) version of the package. You will get a JAR (.jar) file.
+Store that somewhere reasonable, like in your home directory.</p>
+
+<p>A command line shell program is already installed on your computer, no
+matter what operating system you have. How you access it is different for
+each, though:</p>
+
+<ul>
+
+<li><strong>On Mac OS X:</strong> Run Terminal, found in
+/Applications/Utilities.</li>
+
+<li><strong>On Windows:</strong> Run cmd.exe by going to Start, then Run...,
+then type “cmd.exe” (without the quotes) and hit Enter.</li>
+
+<li><strong>On Linux and Unix:</strong> You’re probably already
+familiar with the command line. <tt>:)</tt></li>
+
+</ul>
+
+<p>In the following instructions, I show examples of command line usage. I
+use fairly standard conventions for command line documentation:</p>
+
+<ul>
+
+<li><strong><tt>Strong typewriter text</tt></strong> shows stuff you type
+in.
+</li>
+
+<li><tt>Regular typewriter text</tt> shows stuff the system prints to
+you.</li>
+
+<li>The canonical shell prompt is <tt>$</tt> for Unix-like systems, and
+<tt>&gt;</tt> for Windows systems. Your system’s actual prompt is
+probably different. In cases where it matters I’ll prefix the prompt
+with <tt>client</tt> or <tt>server</tt> to indicate that you should run that
+command on the client host or on the server host, respectively. Also,
+I’ll generally use the Unix <tt>$</tt> prompt, even for Windows.</li>
+
+</ul>
+
+<p>Also note that from here on out, we’ll refer to Linux, Unix, and
+Mac OS X all as “Unix-like systems” or even just
+“Unix” for brevity.</p>
+
+<p><strong>Set up the command line environment.</strong> You want the Java
+programs to be in your PATH for convenience, and you need Bouncy Castle to
+be in Java’s CLASSPATH. But before we can continue, I need to explain
+some stuff about the command line. In your command shell, run the following
+commands. (They are different for Windows than they are for Unix-like
+systems.)</p>
+
+<p>For Unix:</p>
+
+<pre>
+$ <strong>export CLASSPATH=".:$HOME/bcprov-jdk15-143.jar"</strong>
+$ <strong>echo $CLASSPATH</strong>
+.:/Users/chris/bcprov-jdk15-143.jar
+</pre>
+
+<p>For Windows:</p>
+
+<pre>
+&gt; <strong>set CLASSPATH .;%HOMEDRIVE%%HOMEPATH%\bcprov-jdk15-143.jar</strong>
+&gt; <strong>echo %CLASSPATH%</strong>
+.;\Users\chris\bcprov-jdk15-143.jar
+</pre>
+
+
+<h2>Download and Build the Octavia Software</h2>
+
+<p><strong>First, download the latest version of Octavia</strong> from <a
+href="octavia-hg.zip">http://www.wieldysoftware.com/octavia/octavia-hg.zip</a>.
+Then, unzip the package and put the resulting directory somewhere that makes
+sense to you. In the following examples, I’ll call the Octavia
+directory “8va”.</p>
+
+<p><strong>Next, build the software.</strong> This example assumes you have
+the Java compiler, <var>javac</var>, in your PATH. For Unix:</p>
+
+<pre>
+$ <strong>cd 8va/src</strong>
+$ <strong>./make</strong>
+javac -Xlint octavia/BlockID.java
+javac -Xlint octavia/Client.java
+<em>...other Java files...</em>
+</pre>
+
+<p>And for Windows:</p>
+
+<pre>
+&gt; <strong>cd 8va\src</strong>
+&gt; <strong>make.bat</strong>
+javac -Xlint octavia/BlockID.java
+javac -Xlint octavia/Client.java
+<em>...other Java files...</em>
+</pre>
+
+<p><strong>Now install the Octavia properties file in your home
+directory.</strong> The properties file tells Octavia its configuration
+parameters. For Unix:</p>
+
+<pre>
+<em>Assuming you’re still in 8va/src after the previous command</em>
+$ <strong>mkdir ~/.8va</strong>
+$ <strong>cp 8va.properties ~/.8va/properties</strong>
+</pre>
+
+<p>And for Windows:</p>
+
+<pre>
+<em>Assuming you’re still in 8va\src after the previous command</em>
+&gt; <strong>mkdir %HOMEDRIVE%%HOMEPATH%\_8va</strong>
+&gt; <strong>copy 8va.properties %HOMEDRIVE%%HOMEPATH%\_8va\properties</strong>
+</pre>
+
+<h3>Install Octavia on Clients <em>and</em> Servers</h3>
+
+<p>The rest of this HOWTO has you running Octavia commands on clients and on
+servers.</p>
+
+
+<h2>Key Management</h2>
+
+<p>Octavia clients and servers use cryptography to identify each other and
+protect their communications from the depredations of maniacs on the
+cybertubes. Octavia uses two kinds of keys.</p>
+
+<dl>
+
+<dt><strong>Signing keys</strong></dt>
+
+<dd>
+
+<p>Octavia clients and servers use signing keys to identify each other and
+to prove things about their communications. Servers recognize clients by the
+clients’ unique signing keys&#x200A;—&#x200A;that is, each
+client has its own signing key that it shares with a server and with nobody
+else.</p>
+
+<p>Every client and every server maintains a <em>keystore</em> file
+containing all the signing keys they know. A keystore file contains a list
+of <var>name</var> = <var>value</var> pairs. The <var>name</var> is the name
+of the key, and the <var>value</var> is the value itself (a string of random
+bytes). There is a crucial difference between the keystores kept by servers
+vs. those kept by clients: Server keystores use names that are meaningless
+to humans but meaningful to Octavia, and clients use the server’s
+hostname and port for the key name.</p>
+
+</dd>
+
+<dt><strong>Encryption keys</strong></dt>
+
+<dd>
+
+<p>Only Octavia clients use encryption keys. These keys are used in the
+encryption algorithm that clients use to encrypt their data before sending
+it across the internet to the servers. Every client maintains its own
+encryption keys, keeping them secret even from the servers. Clients store
+encryption keys in their <em>directory descriptors</em> (described
+below).</p>
+
+</dd>
+
+</dl>
+
+<h3>Generate a Client Key</h3>
+
+<p>To set up a new Octavia client, you need to generate a new signing key.
+Octavia’s <var>KeyManager</var> helps you generate and manage them.
+You can get a help message from <var>KeyManager</var>:</p>
+
+<pre>
+$ <strong>java octavia.KeyManager</strong>
+Usage: java octavia.KeyManager client|server command [...]
+
+command can be one of:
+    new                   -- create a new keystore
+    show                  -- show all keys in the store
+    show alias [...]      -- show one or more keys
+    delete alias [...]    -- delete one or more keys by alias
+    add alias             -- generate and insert a new key
+    add key               -- insert the key; alias will be hash(key)
+    add alias key         -- insert the new key
+</pre>
+
+<p>To generate a new client keystore and show that the new store contains no
+keys, use the <var>new</var> and <var>show</var> commands. Use a password to
+protect your keystore. <var>show</var> will print nothing since you have no
+keys yet.</p>
+
+<pre>
+client $ <strong>java octavia.KeyManager client new</strong>
+client $ <strong>java octavia.KeyManager client show</strong>
+</pre>
+
+<p>To add a new client key, supply an alias for it. The alias must be the
+hostname and port of the server you want to register with, formatted like
+so: <tt><em>hostname</em>:<em>port</em></tt>.</p>
+
+<pre>
+$ <strong>java octavia.KeyManager client add localhost:55555</strong>
+$ <strong>java octavia.KeyManager client show</strong>
+localhost:55555 fb8325bf789f0533708094218cf85d8c <em>more bytes...</em>
+</pre>
+
+<h3>Register the Client Key With a Server</h3>
+
+<p>Now that your client keystore has a signing key, you need to get the key
+installed in the server’s keystore so that the server can recognize
+the client. This implies, of course, that you somehow copied the client key
+to the server host. Currently, that little detail is “out of
+band” for Octavia; you could use <var>scp</var>(1), email, encrypted
+email, a web app of your own devising, et c. We know that is dumb and will
+definitely fix it someday. For now though, you have to do it by hand.</p>
+
+<pre>
+server $ <strong>java octavia.KeyManager server new</strong>
+server $ <strong>java octavia.KeyManager server add fb8325bf789f0533708094218cf85d8c <em>more bytes...</em></strong>
+server $ <strong>java octavia.KeyManager server show</strong>
+092d3a7116bec419 <em>more bytes...</em> 6ed1d516f4c5d23cd7a51 <em>more bytes...</em>
+</pre>
+
+
+
+<h2>Start the Server</h2>
+
+<p>This, at least, is pretty easy:</p>
+
+<pre>
+server $ <strong>java octavia.Server</strong>
+</pre>
+
+<p>If your system has <var>tail</var>(1) (any Unix system, and Windows
+systems with Cygwin installed), you can watch your Octavia log file:</p>
+
+<pre>
+server $ <strong> tail -f ~/.8va/log</strong>
+1265351670979 I Using crypto provider BC version 1.43
+1265351671006 I Loaded KeyStore from /Users/chris/.8va/server.keystore. Key aliases: 01cec5c86ce4878bbe8f82e5b16734d63df71121370f19cec7cfdaf3985401de, 
+1265351671010 M Octavia version 20091201 'Neck Pickup' listening on /0.0.0.0:55555. Get ready for fun!
+</pre>
+
+<p>On Windows without tail, you can always just blast out the whole
+thing:</p>
+
+<pre>
+server &gt; <strong>type %HOMEDRIVE%%HOMEPATH%\_8va\log</strong>
+1265351670979 I Using crypto provider BC version 1.43
+1265351671006 I Loaded KeyStore from /Users/chris/.8va/server.keystore. Key aliases: 01cec5c86ce4878bbe8f82e5b16734d63df71121370f19cec7cfdaf3985401de, 
+1265351671010 M Octavia version 20091201 'Neck Pickup' listening on /0.0.0.0:55555. Get ready for fun!
+</pre>
+
+
+<h2>Using the Client</h2>
+
+<p>First, you need to create a new root directory descriptor. For that, we
+use the <em>mkroot</em> command. <em>mkroot</em> prints the new descriptor
+to the standard output, so in the shell you’ll want to redirect that
+to a file (<em>rt</em> in this example).  I assume your Octavia server runs
+on the host octavia.example.com, listening on port 55555.</p>
+
+<pre>
+client $ <strong>java octavia.Client</strong>
+Usage: java octavia.Client directory-descriptor[/path] command
+[arguments...]
+Usage: java octavia.Client mkroot server:port [server2:port2...]
+
+command can be one of:
+    fetch file [...]          -- fetch one or more files
+    mkdir path                -- create a new subdirectory
+    mkroot server:port [...]  -- create a new root descriptor
+    status                    -- print the status of all files and directories
+    status file [...]         -- print the status of the named files and
+                                 directories
+    store file [...]          -- store the named files
+
+client $ <strong>java octavia.Client mkroot octavia.example.com:55555 &gt; rt</strong>
+client $ <strong>cat rt</strong>
+protocol-version 0
+encryption-key 12ac4a6d2453fde2d7d222b6c1b75b49
+servers octavia.example.com:55555 
+version my-laptop.example.com 4b6c6922
+</pre>
+
+<p>Every action you do with the Octavia client will involve a directory
+descriptor. Verify that your new root is indeed empty (<em>status</em>
+prints nothing):</p>
+
+<pre>
+client $ <strong>java octavia.Client rt status</strong>
+</pre>
+
+<p>Finally! Here is how to store a file in Octavia:</p>
+
+<pre>
+client $ <strong>cat TODO.txt</strong>
+Change to SHA512 for the block ID hash algorithm! Should we also use
+HMAC-SHA512 for signing?
+
+Make a convenience method of Octavia.storeBlock, or simplify the one, as
+necessary.
+
+Create Octavia.encrypt and Octavia.decrypt convenience methods; rename the
+current .encrypt.
+
+Curly quotes for all Javadoc
+
+Should Util.blockName be blockID.fileName?
+
+Write StorageResponse.toString.
+
+Create DeletionRequest/Response and ExistRequest/Response
+client $ <strong>java octavia.Client rt store TODO.txt &gt; rt2</strong>
+client $ <strong>cat rt2</strong>
+protocol-version 0
+encryption-key 7d9a6af925685ce7740efd5c9a4c1e89
+servers octavia.example.com:55555 
+f TODO.txt 1c9 1253e341390
+      1c9 032e52300682be7b71f15af3d9796aa3dfbb38b3799f206d74f4348490f8072f0ab3b2601b5eba172b8f3ca9b87c9edbe04a7b2d497e74c163781a96cbc9e428
+version my-laptop.example.com 0
+</pre>
+
+<p>Note that when we store, a new directory descriptor is written to
+standard out and we save it as a new file, <em>rt2</em>. Let’s check
+the server log to see what happened when we stored the file:</p>
+
+<pre>
+server $ <strong>tail ~/.8va/log</strong>
+1265398431191 D { v 0, type StorageRequest, keyID 110917a9de6b4c86d538c38bf32634da7c9fe997efece92125cd3443e3be84ed171f5a14160dda19d9e4edde2344d7843d68ae44cd5695e69ce265cc692ef0cd, signature 406cf78a3de45cc8f422a90ffb60cdeef655509fdc96c18131064eeed9dbd007f33d4788b42b72a50f91da09a5eb01f4f7e06117165d331667e0a70f0e48eacd, size 457, nonce 4b231ccbef5f96cf, data 4a09b80031f8862b... }
+1265398431197 I Stored new block 032e52300682be7b/71f15af3d9796aa3/dfbb38b3799f206d/74f4348490f8072f/0ab3b2601b5eba17/2b8f3ca9b87c9edb/e04a7b2d497e74c1/63781a96cbc9e428-1c9 
+</pre>
+
+<p>In this case we see that the server saw our storage request, and stored
+our file as one block of data.</p>
+
+<p>Now let’s fetch the file back. Make sure to reference the new
+descriptor <em>rt2</em>, not the old <em>rt</em>:</p>
+
+<pre>
+client $ <strong>java octavia.Client rt2 status</strong>
+       457    Sat Nov 28 20:30:18 PST 2009    TODO.txt
+client $ <strong>java octavia.Client rt2 fetch TODO.txt</strong>
+Change to SHA512 for the block ID hash algorithm! Should we also use
+HMAC-SHA512 for signing?
+
+Make a convenience method of Octavia.storeBlock, or simplify the one, as
+necessary.
+
+Create Octavia.encrypt and Octavia.decrypt convenience methods; rename the
+current .encrypt.
+
+Curly quotes for all Javadoc
+
+Should Util.blockName be blockID.fileName?
+
+Write StorageResponse.toString.
+
+Create DeletionRequest/Response and ExistRequest/Response
+</pre>
+
+<a href="http://creativecommons.org/licenses/by-sa/3.0/"><img
+src="cc-by-sa.png" alt="CC Attribution-ShareAlike" /></a>
+
+</body>
+
+</html>
+

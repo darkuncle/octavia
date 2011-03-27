@@ -1,0 +1,192 @@
+<html>
+
+<head>
+<title>Octavia: A Secure Internet Filesystem</title>
+<link href="style.css" rel="stylesheet" />
+<meta charset="UTF-8">
+</head>
+
+<body>
+
+<h1>Octavia: A Secure Internet Filesystem</h1>
+
+<div align="center">
+<img src="8va.png" alt="" width="105" height="56" style="align: margin-left:
+auto; margin-right: auto;" />
+</div>
+
+<p>Octavia is a secure, decentralized network filesystem.  Although there
+are already many network filesystems, such as the <a
+href="http://en.wikipedia.org/wiki/Server_Message_Block">Common Internet
+Filesystem</a> (also called “<a href="http://www.samba.org/">Samba</a>”),
+Sun’s <a
+href="http://en.wikipedia.org/wiki/Network_File_System_%28protocol%29">Network
+File System</a>, and <a
+href="http://en.wikipedia.org/wiki/Apple_Filing_Protocol">Apple Filing
+Protocol</a>, they are unsafe for use on the wider Internet. (In fact, they
+are unsafe for all but the smallest, physically private networks, as well.)
+By contrast, Octavia aims to provide specific security and reliability
+guarantees while still providing good performance and usability.</p>
+
+<p>In particular, most existing network filesystems rely on a single central
+<em>file server</em> computer to serve data to many client computers.  This
+centralization is both a strength and a weakness: while it is easy to
+understand and develop a centralized system, it proves brittle in practice.
+If the server becomes overloaded or crashes, client performance becomes
+degraded or even completely unavailable. It is often (but not necessarily)
+the case that people must place complete trust in the central server as
+well: if the server is compromised, people can no longer be certain that
+their data has not been accessed by the attacker.</p>
+
+<p>The <a href="http://www.allmydata.org/">Tahoe-LAFS</a> filesystem most
+closely resembles Octavia: it shares Octavia’s goals of security and
+reliability. Octavia aims to explore different design alternatives in the
+same problem space. For other significant work in this area, perhaps most
+notably including <a href="references.html#mazieres-sfs">SFS</a>, see the <a
+href="references.html">references page</a>.</p>
+
+
+<h2>How Is Octavia Secure?</h2></a>
+
+<div id="sec-how-secure">
+
+<p>Octavia provides four crucial security guarantees. We currently know of
+no network filesystem besides Tahoe-LAFS that claims to provide these
+guarantees.</p>
+
+<ul>
+
+<li><p><strong>Confidentiality.</strong> Before sending data to the Octavia
+server, the Octavia client encrypts the data in such a way that only the
+client itself can decrypt it. The server cannot decrypt the data, nor can
+any other user. The client only ever sends the encrypted form of the data
+over the internet. The confidentiality of the client’s data is thus
+protected from servers and from eavesdroppers on the internet.</p>
+
+<p>The encryption function is <a
+href="http://en.wikipedia.org/wiki/Advanced_Encryption_Standard">AES-256</a>
+in <a
+href="http://en.wikipedia.org/wiki/Block_cipher_modes_of_operation">cipher
+block chaining</a> (CBC) mode with a cryptographically random key and a
+unique, cryptographically random initialization vector (IV) created for each
+encryption operation. Each directory of files has its own cryptographically
+random key.</li>
+
+<li><p><strong>Integrity.</strong> In addition to encrypting the data when
+storing data on the server, the client also computes a cryptographic <a
+href="http://en.wikipedia.org/wiki/Message_authentication_code">message
+authentication code (MAC)</a> over the data. The signature is created with a
+secret <em>signing key</em> that only the client and the server share; the
+key is necessary to compute the signature. Thus, the server and the client
+can verify that the data has not been damaged in transit over the network,
+and that only the true client or server could have signed it.</p>
+
+<p>The MAC function is <a
+href="http://en.wikipedia.org/wiki/HMAC">HMAC-SHA-512</a>, again with a
+cryptographically random symmetric key. The key is pre-shared, out of band,
+between client and server in some server-defined protocol.</p>
+
+<p>When reading data from servers, clients ask for <em>segments</em> of data
+identified by a <em>cryptographic hash</em> of the data itself. When the
+servers respond, clients check that the hash is correct by re-computing the
+hash for the received data. It is (believed to be) computationally
+infeasible to forge these hashes or to find two segments with the same hash
+value, so clients can trust that servers have sent the correct data and that
+no attacker has damaged the data in transit.</p>
+
+<p>The cryptographic hash is <a
+href="http://en.wikipedia.org/wiki/SHA_hash_functions">SHA-512d</a>.</p></li>
+
+<li><p><strong>Authentication.</strong> Since the client and the server
+share the signing key, they can verify that a signed block of data could
+only have been signed by a computer that has the secret key installed.
+Octavia uses this feature to enable servers to ensure that incoming data are
+sent by authorized clients, and to enable clients to know that the true
+server received the client's request.</p>
+
+<p>Servers can implement essentially arbitrary policies and arbitrary client
+registration protocols. They can leverage centralized AAA systems like
+Active Directory, they can accept anonymous clients, they can enforce
+per-client quotas, and so on. Clients can interact with many servers
+implementing many policies, transparently&#x200A;—&#x200A;in fact, clients
+generally have no understanding of server policy at all, except
+indirectly.</p></li>
+
+<li><p><strong>Availability.</strong> Octavia clients can store copies of
+their data on many servers. Ideally, people will configure their clients to
+store copies of their data on servers that are distributed in many different
+locations, thus providing protection against various types of calamity: bad
+weather, natural disasters, power outages, human errors, et c.</p>
+
+<p>Octavia simply copies the entire data to many servers, making no use of
+clever techniques such as <a
+href="http://en.wikipedia.org/wiki/Erasure_code">erasure coding</a> to
+provide efficient redundancy. Although space-inefficient and not as reliable
+for the money as erasure coding, this approach is time-efficient, simple to
+implement and to understand, requires only simple configuration, and
+maximizes read parallelism (any valid response from any server satisfies the
+request).</p></li>
+
+</ul>
+
+</div>
+
+
+<h2>What About Decentralization?</h2></a>
+
+<div id="sec-decentralization">
+
+<p>Octavia is designed to be deployed on the internet. Since the internet
+has no centralized authority, Octavia does not rely on one. Octavia clients
+and servers can associate and disassociate on an ad hoc basis. Clients don’t
+depend on any particular server, and servers are thus free to implement any
+policy toward clients they choose. Clients can work with servers on any
+network, in any location, implementing any policy, in any combination.</p>
+
+<p>Octavia also scales down to intranets and LANs. In a sense, these
+centrally-managed networks are special cases of the general, decentralized
+case: the same mechanisms that work to associate clients and servers in a
+decentralized manner also work in a centrally-managed deployment.</p>
+
+</div>
+
+
+<h2>Octavia Technical Details</h2></a>
+
+<div id="sec-tech-ref">
+
+<ul>
+
+<li>A sketch of the <a href="architecture.html">Octavia architecture</a>,
+with comments by Zooko.</li>
+
+<li>There are many <a href="faq.html">frequently asked questions</a> about
+Octavia.</li>
+
+<li>Check out the <a href="protocol-overview.html">protocol overview</a>,
+with pictures.</li>
+
+<li>The <a href="directory-descriptor-grammar.html">directory descriptor
+grammar</a> describes the format of directories and files that Octavia
+clients use to assemble your files and data from raw segments of
+ciphertext.</li>
+
+<li>The <a href="references.html">bibliography</a> lists some sources of
+inspiration for Octavia’s design, documents that are relevant but did
+not inspire Octavia, and generally fun network security and protocol design
+stuff. Incomplete.</li>
+
+<li>Octavia’s design enables a wide array of possible <a
+href="deployments.html">deployment scenarios</a>.</li>
+
+</ul>
+
+</div>
+
+<a href="http://creativecommons.org/licenses/by-sa/3.0/"><img
+src="cc-by-sa.png" alt="CC Attribution-ShareAlike" /></a>
+
+</body>
+
+</html>
+

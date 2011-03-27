@@ -1,0 +1,185 @@
+<html>
+
+<head>
+<title>Octavia: Directory Descriptor Grammar</title>
+<link href="style.css" rel="stylesheet" /><meta charset="UTF-8">
+</head>
+
+<body>
+
+<h1><a href="index.html"><img src="8va.png" alt="Octavia" width="105" height="56" /></a>: Directory Descriptor Grammar</h1>
+
+<p>This pseudo-BNF grammar defines Octavia’s directory descriptor
+format. A directory descriptor specifies the keys used to sign and encrypt
+the files, followed by a list of file descriptors.</p>
+
+<p>File descriptors specify minimal metadata, followed by the IDs of the
+blocks that make up the file.</p>
+
+<h3>A Note on Notation</h3>
+
+
+<h2>Grammar</h2>
+
+<p><strong>Digits.</strong> Numerical values such as sizes and timestamps
+are expressed as of strings decimal or hexadecimal digits.</p>
+
+<pre>
+<var>hex-digit</var> := 0-9 | a-f | A-F
+<var>decimal-digit</var> := 0-9
+</pre>
+
+<p><strong>Protocol version.</strong> The protocol reserves one byte in
+protocol messages for the protocol version in use; each directory descriptor
+is tied to a protocol version. Clients may create directories with one
+protocol version, be upgraded to support a new version, and still support
+the old directories correctly by knowing the right protocol version for the
+directory.</p>
+
+<pre>
+<var>protocol-version</var> := protocol-version <var>hex-digit</var>{2}
+</pre>
+
+<p><strong>Names</strong> consist of 1 – 64 printable Unicode code
+points, no more than 64 bytes. If the name contains spaces, surround it with
+quotes.</p>
+
+<pre>
+<var>name</var> := ” <var>printable-utf8</var>{1,64} ”
+<var>name</var> := ’ <var>printable-utf8</var>{1,64} ’
+<var>name</var> := <var>printable-utf8</var>{1,64}
+</pre>
+
+<p><strong>Size</strong> in bytes, unsigned.</p>
+
+<pre>
+<var>size</var> := <var>hex-digit</var>{1,16}
+</pre>
+
+<p><strong>Timestamp.</strong> Times are expressed in seconds since the Unix
+epoch. The hexadecimal digits represent an unsigned integer.</p>
+
+<pre>
+<var>time</var> := <var>hex-digit</var>{8}
+</pre>
+
+<p><strong>Block ID.</strong> Block IDs uniquely identify blocks of data by
+their size and cryptographic hash value. File contents are constructed from an
+ordered list of block IDs. In protocol version 0, the hash is 256 bits.</p>
+
+<pre>
+<var>block-id</var> := <var>size</var> <var>hex-digit</var>{64}
+</pre>
+
+<p><strong>Encryption key.</strong> Every directory’s files are
+encrypted with a distinct 128-bit key. Protocol version 0 specifies the
+encryption algorithm AES-128-CBC.</p>
+
+<p>Note that the encryption key is not the signing key; signing keys
+represent a particular client’s relationship with a particular server,
+and can differ even when two clients share a directory. Signing keys are
+stored in a client’s keystore file, not in directory descriptors.</p>
+
+<p>As a special case, a directory with no key does not use encryption, and
+the files are stored and transmitted over the internet in plaintext. We
+don’t recommend this even for public data.</p>
+
+<pre>
+<var>encryption-key</var> := encryption-key <var>hex-digit</var>{32}
+</pre>
+
+<p><strong>File modification time.</strong> A timestamp, as defined
+above.</p>
+
+<pre>
+<var>modified-time</var> := <var>time</var>
+</pre>
+
+<p><strong>Directory descriptor version.</strong> Every time a directory
+changes&#x200A;—&#x200A;including when any of the files it contains
+changes&#x200A;—&#x200A;the client creates and stores a new version of the
+directory. The client may choose to retain the old versions. The descriptor
+version allows clients to recall different versions of a directory (and
+hence different versions of its files).</p>
+
+<p>The client chooses an arbitrary <var>name</var>. The client’s
+hostname is a fine possibility.</p>
+
+<pre>
+<var>descriptor-version</var> := version <var>name</var> <var>modified-time</var>
+</pre>
+
+<p><strong>File type</strong> can be either “f” (file) or
+“d” (directory). A directory is, just like a file, a stream of
+bytes. However, clients interpret the bytes of directories as nested directory
+descriptors. Thus an Octavia directory can be hierarchical.</p>
+
+<pre>
+<var>type</var> := f
+<var>type</var> := d
+</pre>
+
+<p><strong>File descriptor.</strong> A file descriptor tells a client how to
+construct a stream of bytes from a set of blocks by ordering the set. File
+descriptors also include some metadata. Version 0 does not include the full
+set of POSIX metadata. Honestly, do you care?</p>
+
+<pre>
+<var>file-descriptor</var> := <var>type</var> <var>name</var> <var>size</var> <var>modified-time</var> <var>block</var>{1,}
+</pre>
+
+<p><strong>Servers.</strong> A list of servers believed to have stored
+blocks for files in this directory. A client may or may not have a signing
+key relationship with the server; without one, the client cannot write
+blocks to the servers, but can still retrieve the file blocks from servers
+willing to respond.</p>
+
+<pre>
+<var>host</var> := <var>ip-address</var>
+        <var>host-name</var>
+<var>port</var> := <var>decimal-digit</var>{1,5}
+<var>server</var> := <var>host</var> : <var>port</var>
+<var>servers</var> := <var>server</var>{1,}
+</pre>
+
+<p><strong>Directory descriptor.</strong> The most volatile components of a
+directory descriptor are bunched together toward the end of the text, in an
+attempt to minimize the block-level delta for new versions of the
+descriptor. Since servers store only a single instance of blocks, clients
+may avoid re-storing blocks the server already has, thus optimizing
+directory writes somewhat. In particular, although the list of file
+descriptors is not strictly ordered, clients should sort them in ascending
+order by modified time.</p>
+
+<pre>
+<var>directory-descriptor</var> := <var>protocol-version</var> <var>encryption-key</var>
+        <var>servers</var> <var>file-descriptor</var>{1,} <var>descriptor-version</var>
+</pre>
+
+
+<h2>Example Directory Descriptor</h2>
+
+<p>This example shows what a simple descriptor might look like.</p>
+
+<pre>
+protocol-version 0
+encryption-key deadbeefdeadbeefdeadbeefdeadbeef
+servers 127.0.0.1:55555 octavia.wieldysoftware.com:55555 noodle.doodle:1234 10.1.2.3:9999
+f readme.txt 1502 4ac7ff2d
+    400 deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+    400 deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+    400 deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+    400 deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+    400 deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+    102 deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+d stuff 457 4ac7ff2d
+    457 deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
+version erdbei.local-1176 4ac7ff3d
+</pre>
+
+<a href="http://creativecommons.org/licenses/by-sa/3.0/"><img
+src="cc-by-sa.png" alt="CC Attribution-ShareAlike" /></a>
+
+</body>
+</html>
+
